@@ -5,41 +5,51 @@ import (
 	"io"
 	"log"
 
+	"github.com/jethikaviduruwan/sentinel/hq/internal/db"
 	pb "github.com/jethikaviduruwan/sentinel/proto/gen"
 )
 
-// MetricsServer implements the gRPC MetricsService
 type MetricsServer struct {
 	pb.UnimplementedMetricsServiceServer
+	DB *db.DB
 }
 
-// StreamMetrics receives a stream of metric payloads from an Agent
 func (s *MetricsServer) StreamMetrics(stream pb.MetricsService_StreamMetricsServer) error {
+	ctx := stream.Context()
+
 	for {
 		payload, err := stream.Recv()
 		if err == io.EOF {
-			// Agent closed the stream — send acknowledgement
 			return stream.SendAndClose(&pb.Ack{Ok: true})
 		}
 		if err != nil {
 			return fmt.Errorf("error receiving metrics: %w", err)
 		}
 
-		// For now just log what we receive
 		sys := payload.System
-		log.Printf("[HQ] Server: %s | CPU: %.2f%% | MEM: %d MB | DISK: %d GB",
+
+		// 1. Upsert server record
+		if err := s.DB.UpsertServer(ctx, sys.ServerId, sys.Timestamp); err != nil {
+			log.Printf("[HQ] db error (upsert server): %v", err)
+			continue
+		}
+
+		// 2. Save system metrics
+		if err := s.DB.SaveSystemMetrics(ctx, sys); err != nil {
+			log.Printf("[HQ] db error (system metrics): %v", err)
+			continue
+		}
+
+		// 3. Save service metrics
+		if err := s.DB.SaveServiceMetrics(ctx, payload.Services); err != nil {
+			log.Printf("[HQ] db error (service metrics): %v", err)
+			continue
+		}
+
+		log.Printf("[HQ] saved | server: %s | CPU: %.2f%% | MEM: %dMB",
 			sys.ServerId,
 			sys.CpuPercent,
 			sys.MemUsed/1024/1024,
-			sys.DiskUsed/1024/1024/1024,
 		)
-
-		for _, svc := range payload.Services {
-			status := "DOWN"
-			if svc.Running {
-				status = "UP"
-			}
-			log.Printf("[HQ]   service: %-12s %s", svc.Name, status)
-		}
 	}
 }
