@@ -1,0 +1,9 @@
+server_id: "Jethika"      # unique name for this agent
+hq_address: "localhost:50051"
+interval_seconds: 5
+
+services:
+  - nginx
+  - postgres
+  - redis
+  - bash

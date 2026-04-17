@@ -3,26 +3,25 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 	"time"
 
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/process"
-
+	"github.com/jethikaviduruwan/sentinel/agent/internal/collector"
+	"github.com/jethikaviduruwan/sentinel/agent/internal/config"
 	"github.com/jethikaviduruwan/sentinel/agent/internal/sender"
-	pb "github.com/jethikaviduruwan/sentinel/proto/gen"
 )
 
 func main() {
-	hqAddr := "localhost:50051"
-	serverID, _ := os.Hostname()
-	services := []string{"nginx", "postgres", "bash"}
+	// Load config
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		log.Fatalf("[Agent] failed to load config: %v", err)
+	}
 
-	log.Printf("[Agent] starting, server_id=%s", serverID)
+	log.Printf("[Agent] starting, server_id=%s, hq=%s", cfg.ServerID, cfg.HQAddress)
+	log.Printf("[Agent] monitoring services: %v", cfg.Services)
 
-	s, err := sender.New(hqAddr)
+	// Connect to HQ
+	s, err := sender.New(cfg.HQAddress)
 	if err != nil {
 		log.Fatalf("[Agent] could not connect to HQ: %v", err)
 	}
@@ -30,12 +29,12 @@ func main() {
 
 	log.Println("[Agent] connected to HQ, starting metric stream...")
 
-	// Send metrics every 5 seconds
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(time.Duration(cfg.IntervalSeconds) * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		payload, err := collectMetrics(serverID, services)
+		// Collect concurrently
+		payload, err := collector.Collect(cfg.ServerID, cfg.Services)
 		if err != nil {
 			log.Printf("[Agent] collect error: %v", err)
 			continue
@@ -46,73 +45,9 @@ func main() {
 			continue
 		}
 
-		log.Printf("[Agent] metrics sent successfully")
+		log.Printf("[Agent] metrics sent — CPU: %.2f%% MEM: %dMB",
+			payload.System.CpuPercent,
+			payload.System.MemUsed/1024/1024,
+		)
 	}
-}
-
-func collectMetrics(serverID string, services []string) (*pb.MetricPayload, error) {
-	now := time.Now().UnixMilli()
-
-	// CPU
-	cpuPcts, err := cpu.Percent(500*time.Millisecond, false)
-	if err != nil {
-		return nil, err
-	}
-
-	// Memory
-	vm, err := mem.VirtualMemory()
-	if err != nil {
-		return nil, err
-	}
-
-	// Disk
-	d, err := disk.Usage("/")
-	if err != nil {
-		return nil, err
-	}
-
-	sys := &pb.SystemMetrics{
-		ServerId:   serverID,
-		Timestamp:  now,
-		CpuPercent: cpuPcts[0],
-		MemTotal:   vm.Total,
-		MemUsed:    vm.Used,
-		MemFree:    vm.Free,
-		DiskTotal:  d.Total,
-		DiskUsed:   d.Used,
-		DiskFree:   d.Free,
-	}
-
-	// Services
-	var svcMetrics []*pb.ServiceMetric
-	procs, _ := process.Processes()
-
-	for _, svcName := range services {
-		metric := &pb.ServiceMetric{
-			ServerId:  serverID,
-			Timestamp: now,
-			Name:      svcName,
-			Running:   false,
-		}
-		for _, p := range procs {
-			name, err := p.Name()
-			if err != nil {
-				continue
-			}
-			if name == svcName {
-				cpuPct, _ := p.CPUPercent()
-				memInfo, _ := p.MemoryInfo()
-				metric.Running = true
-				metric.CpuPercent = cpuPct
-				metric.MemRss = memInfo.RSS
-				break
-			}
-		}
-		svcMetrics = append(svcMetrics, metric)
-	}
-
-	return &pb.MetricPayload{
-		System:   sys,
-		Services: svcMetrics,
-	}, nil
 }
