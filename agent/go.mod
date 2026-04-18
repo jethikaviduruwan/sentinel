@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/jethikaviduruwan/sentinel/proto v0.0.0-00010101000000-000000000000
 	github.com/shirou/gopsutil/v3 v3.23.12
+	github.com/spf13/viper v1.21.0
 	google.golang.org/grpc v1.80.0
 )
 
@@ -21,7 +22,6 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/spf13/viper v1.21.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect

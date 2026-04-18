@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"time"
+	"os"
 
 	"github.com/jethikaviduruwan/sentinel/agent/internal/collector"
 	"github.com/jethikaviduruwan/sentinel/agent/internal/config"
@@ -15,6 +16,11 @@ func main() {
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		log.Fatalf("[Agent] failed to load config: %v", err)
+	}
+
+	// Override HQ address from environment if set (used in Docker)
+	if addr := os.Getenv("HQ_ADDRESS"); addr != "" {
+		cfg.HQAddress = addr
 	}
 
 	log.Printf("[Agent] starting, server_id=%s, hq=%s", cfg.ServerID, cfg.HQAddress)

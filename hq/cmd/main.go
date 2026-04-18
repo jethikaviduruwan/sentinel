@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 
 	"google.golang.org/grpc"
 
@@ -18,7 +19,10 @@ func main() {
 	ctx := context.Background()
 
 	// Connect to Postgres
-	connStr := "postgres://sentinel:sentinel123@localhost:5432/sentinel"
+	connStr := os.Getenv("DB_CONN")
+	if connStr == "" {
+		connStr = "postgres://sentinel:sentinel123@localhost:5432/sentinel"
+	}
 	database, err := db.New(ctx, connStr)
 	if err != nil {
 		log.Fatalf("[HQ] failed to connect to database: %v", err)
